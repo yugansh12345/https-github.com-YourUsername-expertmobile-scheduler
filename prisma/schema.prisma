@@ -1,0 +1,481 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─────────────────────────────────────────────
+// Enums
+// ─────────────────────────────────────────────
+
+enum UserRole {
+  ADMIN
+  BOOKER
+  INSTALLER
+}
+
+enum BookingStatus {
+  pending
+  confirmed
+  on_the_way
+  in_progress
+  completed
+  cancelled
+  no_show
+}
+
+enum PhotoType {
+  BEFORE
+  AFTER
+  ISSUE
+  EQUIPMENT_LABEL
+}
+
+enum CustomerType {
+  residential
+  commercial
+  industrial
+  fleet
+}
+
+enum VehicleType {
+  heavy_truck
+  light_truck
+  pickup
+  sedan
+  suv
+  rv
+  motorhome
+  fifth_wheel
+  boat
+  heavy_equipment
+  fleet_vehicle
+  atv_side_by_side
+  other
+}
+
+enum EquipmentType {
+  radio
+  booster
+  eld
+  gps_tracker
+  satellite
+  antenna
+  repeater
+  other
+}
+
+enum ServiceCategory {
+  two_way_radio
+  poc_radio
+  cell_booster
+  fleet_tracking_eld
+  satellite
+}
+
+enum SkillType {
+  radio
+  booster
+  eld
+  satellite
+  antenna
+  poc
+}
+
+enum TimeOffStatus {
+  pending
+  approved
+  rejected
+}
+
+enum AnnouncementAudience {
+  ALL
+  INSTALLERS
+  BOOKERS
+}
+
+// ─────────────────────────────────────────────
+// User & Auth
+// ─────────────────────────────────────────────
+
+model User {
+  id                  String    @id @default(cuid())
+  email               String    @unique
+  username            String    @unique
+  hashedPassword      String
+  role                UserRole  @default(BOOKER)
+  name                String
+  phone               String?
+  isActive            Boolean   @default(true)
+  isLocked            Boolean   @default(false)
+  mustChangePassword  Boolean   @default(true)
+  twoFactorRequired   Boolean   @default(false)
+  twoFactorSecret     String?
+  twoFactorVerified   Boolean   @default(false)
+  failedLoginAttempts Int       @default(0)
+  lastLoginAt         DateTime?
+  createdById         String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  // Relations
+  createdBy           User?     @relation("CreatedByUser", fields: [createdById], references: [id])
+  createdUsers        User[]    @relation("CreatedByUser")
+
+  installer           Installer?
+  booker              Booker?
+
+  bookingsAsBooker    Booking[] @relation("BookerBookings")
+  bookingsAsInstaller Booking[] @relation("InstallerBookings")
+
+  photosUploaded      BookingPhoto[]
+  auditLogs           AuditLog[]
+  passwordResets      PasswordResetEvent[] @relation("ResetTarget")
+  passwordResetsBy    PasswordResetEvent[] @relation("ResetByAdmin")
+  announcements       Announcement[]
+  timeOffRequests     TimeOff[]
+
+  @@index([email])
+  @@index([username])
+  @@index([role])
+  @@index([isActive])
+}
+
+model Installer {
+  id                       String      @id @default(cuid())
+  userId                   String      @unique
+  serviceAreaPostalCodes   String[]    @default([])
+  skills                   SkillType[] @default([])
+  vehicleAssigned          String?
+  defaultWorkingHours      Json?       // { mon: {start:"08:00", end:"17:00"}, ... }
+  intrinsicallySafeCert    Boolean     @default(false)
+  bio                      String?
+  timezone                 String      @default("America/Edmonton")
+
+  user                     User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Booker {
+  id       String  @id @default(cuid())
+  userId   String  @unique
+  location String?
+
+  user     User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model PasswordResetEvent {
+  id             String   @id @default(cuid())
+  userId         String
+  resetByAdminId String?
+  createdAt      DateTime @default(now())
+
+  user           User     @relation("ResetTarget", fields: [userId], references: [id], onDelete: Cascade)
+  resetByAdmin   User?    @relation("ResetByAdmin", fields: [resetByAdminId], references: [id])
+
+  @@index([userId])
+}
+
+// ─────────────────────────────────────────────
+// Customer & Vehicle & Equipment
+// ─────────────────────────────────────────────
+
+model Customer {
+  id            String       @id @default(cuid())
+  name          String
+  email         String?
+  phone         String?
+  address       String?
+  city          String?
+  province      String?      @default("AB")
+  postalCode    String?
+  lat           Float?
+  lng           Float?
+  customerType  CustomerType @default(residential)
+  accountNumber String?
+  notes         String?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  vehicles      Vehicle[]
+  equipment     Equipment[]
+  bookings      Booking[]
+
+  @@index([name])
+  @@index([email])
+  @@index([postalCode])
+  @@index([customerType])
+}
+
+model Vehicle {
+  id             String      @id @default(cuid())
+  customerId     String
+  vehicleType    VehicleType
+  year           Int?
+  make           String?
+  model          String?
+  trim           String?
+  color          String?
+  vin            String?
+  licensePlate   String?
+  fleetUnitNumber String?
+  notes          String?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  customer       Customer    @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  equipment      Equipment[]
+  bookings       Booking[]
+
+  @@index([customerId])
+  @@index([vin])
+  @@index([licensePlate])
+}
+
+model Equipment {
+  id              String        @id @default(cuid())
+  customerId      String
+  vehicleId       String?
+  equipmentType   EquipmentType
+  brand           String?
+  model           String?
+  serialNumber    String?
+  frequencies     String?       // free text: channel plans, programmed frequencies
+  installLocation String?       // dash, headliner, roof, antenna mount, etc.
+  installedAt     DateTime?
+  bookingId       String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  customer        Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  vehicle         Vehicle?      @relation(fields: [vehicleId], references: [id])
+  booking         Booking?      @relation(fields: [bookingId], references: [id])
+
+  @@index([customerId])
+  @@index([vehicleId])
+  @@index([serialNumber])
+  @@index([equipmentType])
+}
+
+// ─────────────────────────────────────────────
+// Services
+// ─────────────────────────────────────────────
+
+model Service {
+  id              String          @id @default(cuid())
+  name            String
+  category        ServiceCategory
+  durationMinutes Int
+  basePrice       Decimal         @db.Decimal(10, 2)
+  description     String?
+  requiredSkills  SkillType[]     @default([])
+  isActive        Boolean         @default(true)
+  sortOrder       Int             @default(0)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  bookingServices BookingService[]
+
+  @@index([category])
+  @@index([isActive])
+}
+
+// ─────────────────────────────────────────────
+// Bookings
+// ─────────────────────────────────────────────
+
+model Booking {
+  id             String        @id @default(cuid())
+  customerId     String
+  installerId    String
+  bookerId       String
+  vehicleId      String?
+  scheduledStart DateTime
+  scheduledEnd   DateTime
+  status         BookingStatus @default(pending)
+  notes          String?       // customer-facing notes
+  internalNotes  String?       // installer-only notes
+  totalPrice     Decimal?      @db.Decimal(10, 2)
+  address        String?       // job site address (may differ from customer address)
+  lat            Float?
+  lng            Float?
+  isAfterHours   Boolean       @default(false)
+  timezone       String        @default("America/Edmonton")
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  customer       Customer      @relation(fields: [customerId], references: [id])
+  installer      User          @relation("InstallerBookings", fields: [installerId], references: [id])
+  booker         User          @relation("BookerBookings", fields: [bookerId], references: [id])
+  vehicle        Vehicle?      @relation(fields: [vehicleId], references: [id])
+
+  services       BookingService[]
+  photos         BookingPhoto[]
+  signature      BookingSignature?
+  equipment      Equipment[]
+
+  @@index([customerId])
+  @@index([installerId])
+  @@index([bookerId])
+  @@index([status])
+  @@index([scheduledStart])
+  @@index([scheduledEnd])
+}
+
+model BookingService {
+  id            String   @id @default(cuid())
+  bookingId     String
+  serviceId     String
+  priceOverride Decimal? @db.Decimal(10, 2)
+
+  booking       Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  service       Service  @relation(fields: [serviceId], references: [id])
+
+  @@unique([bookingId, serviceId])
+  @@index([bookingId])
+}
+
+model BookingPhoto {
+  id           String    @id @default(cuid())
+  bookingId    String
+  url          String
+  type         PhotoType
+  uploadedById String
+  uploadedAt   DateTime  @default(now())
+
+  booking      Booking   @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  uploadedBy   User      @relation(fields: [uploadedById], references: [id])
+
+  @@index([bookingId])
+}
+
+model BookingSignature {
+  id           String   @id @default(cuid())
+  bookingId    String   @unique
+  signatureUrl String
+  signedAt     DateTime @default(now())
+  signerName   String?
+
+  booking      Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+}
+
+// ─────────────────────────────────────────────
+// Scheduling Helpers
+// ─────────────────────────────────────────────
+
+model TimeOff {
+  id          String        @id @default(cuid())
+  installerId String
+  startDate   DateTime
+  endDate     DateTime
+  status      TimeOffStatus @default(pending)
+  reason      String?
+  reviewedById String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  installer   User          @relation(fields: [installerId], references: [id], onDelete: Cascade)
+
+  @@index([installerId])
+  @@index([status])
+  @@index([startDate])
+}
+
+model Holiday {
+  id       String   @id @default(cuid())
+  date     DateTime @db.Date
+  name     String
+  province String   @default("AB")
+
+  @@unique([date, province])
+  @@index([date])
+  @@index([province])
+}
+
+model BusinessSettings {
+  id                  String   @id @default("singleton")
+  businessStartTime   String   @default("08:00")
+  businessEndTime     String   @default("17:00")
+  slotIncrementMins   Int      @default(30)
+  bufferBetweenJobs   Int      @default(30)
+  travelMultiplier    Float    @default(1.5)
+  serviceAreaCodes    String[] @default([])
+  updatedAt           DateTime @updatedAt
+}
+
+// ─────────────────────────────────────────────
+// NHTSA vPIC Cache
+// ─────────────────────────────────────────────
+
+model VehicleMakeCache {
+  id          String   @id @default(cuid())
+  vehicleType String
+  makeId      Int
+  makeName    String
+  fetchedAt   DateTime @default(now())
+
+  @@unique([vehicleType, makeId])
+  @@index([vehicleType])
+}
+
+model VehicleModelCache {
+  id        String   @id @default(cuid())
+  makeId    Int
+  year      Int
+  modelName String
+  fetchedAt DateTime @default(now())
+
+  @@unique([makeId, year, modelName])
+  @@index([makeId, year])
+}
+
+// ─────────────────────────────────────────────
+// Comms & Admin
+// ─────────────────────────────────────────────
+
+model Announcement {
+  id        String               @id @default(cuid())
+  message   String
+  audience  AnnouncementAudience @default(ALL)
+  createdById String
+  expiresAt DateTime?
+  createdAt DateTime             @default(now())
+
+  createdBy User                 @relation(fields: [createdById], references: [id])
+
+  @@index([audience])
+  @@index([createdAt])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String
+  action     String
+  entityType String?
+  entityId   String?
+  metadata   String?  // JSON string
+  createdAt  DateTime @default(now())
+
+  user       User     @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([action])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
+
+model Supplier {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  brands    String[] @default([])
+  website   String?
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

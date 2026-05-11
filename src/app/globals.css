@@ -1,26 +1,68 @@
+/* Google Fonts must be first */
+@import url("https://fonts.googleapis.com/css2?family=Source+Sans+Pro:ital,wght@0,300;0,400;0,600;0,700;1,400&display=swap");
+
 @import "tailwindcss";
 
+@theme {
+  /* Brand colors */
+  --color-primary: #3E3573;
+  --color-primary-dark: #2F2856;
+  --color-primary-light: #8C7BC6;
+  --color-accent-gold: #B49C49;
+  --color-warning: #FF9C00;
+  --color-surface-dark: #222222;
+  --color-text: #212529;
+  --color-text-muted: #6C757D;
+  --color-surface-light: #F6F5F5;
+  --color-white: #FFFFFF;
+  --color-border: #E5E5E5;
+
+  /* Booking status colors */
+  --color-status-pending: #6C757D;
+  --color-status-confirmed: #3E3573;
+  --color-status-on-the-way: #8C7BC6;
+  --color-status-in-progress: #FF9C00;
+  --color-status-completed: #28A745;
+  --color-status-cancelled: #DC3545;
+  --color-status-no-show: #B49C49;
+
+  /* Typography */
+  --font-sans: "Source Sans Pro", system-ui, sans-serif;
+
+  /* Radius */
+  --radius: 0.5rem;
+}
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: var(--color-white);
+  --foreground: var(--color-text);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+.dark {
+  --background: #0f0e1a;
+  --foreground: #f1f0f5;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  height: 100%;
 }
 
 body {
-  background: var(--background);
+  background-color: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
+  min-height: 100%;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-surface-light);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-primary-light);
+  border-radius: 3px;
 }
