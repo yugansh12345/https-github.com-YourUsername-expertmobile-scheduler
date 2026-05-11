@@ -101,20 +101,29 @@ export async function loginAction(
 
   // 2FA required and already set up — need TOTP verification before session
   if (user.twoFactorRequired && user.twoFactorVerified && user.twoFactorSecret) {
-    // Create a short-lived pre-auth session flagged for 2FA verification
+    try {
+      await createSession({
+        userId: user.id,
+        role: user.role as "ADMIN" | "BOOKER" | "INSTALLER",
+        mustChangePassword: user.mustChangePassword,
+      });
+    } catch (e) {
+      console.error("[login] createSession failed:", e);
+      return { error: "Session error — check SESSION_SECRET env var." };
+    }
+    return { requiresTOTP: true };
+  }
+
+  try {
     await createSession({
       userId: user.id,
       role: user.role as "ADMIN" | "BOOKER" | "INSTALLER",
       mustChangePassword: user.mustChangePassword,
     });
-    return { requiresTOTP: true };
+  } catch (e) {
+    console.error("[login] createSession failed:", e);
+    return { error: "Session error — check SESSION_SECRET env var." };
   }
-
-  await createSession({
-    userId: user.id,
-    role: user.role as "ADMIN" | "BOOKER" | "INSTALLER",
-    mustChangePassword: user.mustChangePassword,
-  });
 
   // redirect() throws internally — must be outside try/catch
   redirect(
