@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { PlusCircle, Pencil } from "lucide-react";
+import { PlusCircle, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,7 +13,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
 import {
-  createServiceAction, updateServiceAction, toggleServiceActiveAction,
+  createServiceAction, updateServiceAction, toggleServiceActiveAction, deleteServiceAction,
 } from "@/app/actions/admin";
 
 export type ServiceRow = {
@@ -54,6 +54,8 @@ export default function ServiceManagement({ initialServices }: { initialServices
   const [isPending, startTransition] = useTransition();
   const [dialogService, setDialogService] = useState<ServiceRow | "new" | null>(null);
   const [formError, setFormError] = useState("");
+  const [deleteService, setDeleteService] = useState<ServiceRow | null>(null);
+  const [deleteError, setDeleteError] = useState("");
 
   function handleSubmit(formData: FormData) {
     setFormError("");
@@ -75,6 +77,20 @@ export default function ServiceManagement({ initialServices }: { initialServices
     startTransition(async () => {
       await toggleServiceActiveAction(id, isActive);
       router.refresh();
+    });
+  }
+
+  function handleDelete() {
+    if (!deleteService) return;
+    setDeleteError("");
+    startTransition(async () => {
+      const result = await deleteServiceAction(deleteService.id);
+      if (result.success) {
+        setDeleteService(null);
+        router.refresh();
+      } else {
+        setDeleteError(result.error);
+      }
     });
   }
 
@@ -129,14 +145,24 @@ export default function ServiceManagement({ initialServices }: { initialServices
                     aria-label={s.isActive ? "Deactivate service" : "Activate service"}
                   />
                 </td>
-                <td className="py-3 px-4 text-right">
-                  <button
-                    onClick={() => { setDialogService(s); setFormError(""); }}
-                    className="p-1.5 rounded hover:bg-[var(--color-surface-light)] text-[var(--color-text-muted)] hover:text-[var(--color-primary)] transition-colors"
-                    title="Edit"
-                  >
-                    <Pencil size={15} />
-                  </button>
+                <td className="py-3 px-4">
+                  <div className="flex items-center gap-1 justify-end">
+                    <button
+                      onClick={() => { setDialogService(s); setFormError(""); }}
+                      className="p-1.5 rounded hover:bg-[var(--color-surface-light)] text-[var(--color-text-muted)] hover:text-[var(--color-primary)] transition-colors"
+                      title="Edit"
+                    >
+                      <Pencil size={15} />
+                    </button>
+                    <button
+                      onClick={() => { setDeleteService(s); setDeleteError(""); }}
+                      disabled={isPending}
+                      className="p-1.5 rounded hover:bg-red-50 text-[var(--color-text-muted)] hover:text-red-600 transition-colors"
+                      title="Delete"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -150,6 +176,33 @@ export default function ServiceManagement({ initialServices }: { initialServices
           </tbody>
         </table>
       </div>
+
+      {/* ── Delete Confirmation Dialog ── */}
+      <Dialog open={!!deleteService} onOpenChange={(o) => !o && setDeleteService(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Service</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-[var(--color-text-muted)] py-2">
+            Are you sure you want to permanently delete{" "}
+            <strong className="text-[var(--color-text)]">{deleteService?.name}</strong>?
+            This cannot be undone.
+          </p>
+          {deleteError && (
+            <p className="text-sm text-red-600 bg-red-50 rounded px-3 py-2">{deleteError}</p>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteService(null)}>Cancel</Button>
+            <Button
+              onClick={handleDelete}
+              disabled={isPending}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              {isPending ? "Deleting…" : "Delete Service"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Create / Edit Dialog */}
       <Dialog open={dialogService !== null} onOpenChange={(o) => !o && setDialogService(null)}>

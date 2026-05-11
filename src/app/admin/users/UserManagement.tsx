@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { PlusCircle, Pencil, KeyRound, LockOpen, Lock } from "lucide-react";
+import { PlusCircle, Pencil, KeyRound, LockOpen, Lock, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,9 +11,8 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
-import { createUserAction, updateUserAction } from "@/app/actions/admin";
+  createUserAction, updateUserAction, deleteUserAction,
+} from "@/app/actions/admin";
 import { adminResetPasswordAction, adminToggleLockAction } from "@/app/actions/auth";
 
 export type UserRow = {
@@ -48,6 +47,10 @@ export default function UserManagement({ initialUsers }: { initialUsers: UserRow
   const [editUser, setEditUser] = useState<UserRow | null>(null);
   const [editError, setEditError] = useState("");
 
+  // Delete dialog
+  const [deleteUser, setDeleteUser] = useState<UserRow | null>(null);
+  const [deleteError, setDeleteError] = useState("");
+
   // Reset password result
   const [resetResult, setResetResult] = useState<{ userName: string; pw: string } | null>(null);
 
@@ -73,6 +76,20 @@ export default function UserManagement({ initialUsers }: { initialUsers: UserRow
         router.refresh();
       } else {
         setEditError(result.error);
+      }
+    });
+  }
+
+  function handleDelete() {
+    if (!deleteUser) return;
+    setDeleteError("");
+    startTransition(async () => {
+      const result = await deleteUserAction(deleteUser.id);
+      if (result.success) {
+        setDeleteUser(null);
+        router.refresh();
+      } else {
+        setDeleteError(result.error);
       }
     });
   }
@@ -151,7 +168,7 @@ export default function UserManagement({ initialUsers }: { initialUsers: UserRow
                     : "Never"}
                 </td>
                 <td className="py-3 px-4">
-                  <div className="flex items-center gap-2 justify-end">
+                  <div className="flex items-center gap-1 justify-end">
                     <button
                       title="Edit"
                       onClick={() => { setEditUser(u); setEditError(""); }}
@@ -178,6 +195,14 @@ export default function UserManagement({ initialUsers }: { initialUsers: UserRow
                       }`}
                     >
                       {u.isLocked ? <LockOpen size={15} /> : <Lock size={15} />}
+                    </button>
+                    <button
+                      title="Delete user"
+                      onClick={() => { setDeleteUser(u); setDeleteError(""); }}
+                      disabled={isPending}
+                      className="p-1.5 rounded hover:bg-red-50 text-[var(--color-text-muted)] hover:text-red-600 transition-colors"
+                    >
+                      <Trash2 size={15} />
                     </button>
                   </div>
                 </td>
@@ -220,7 +245,7 @@ export default function UserManagement({ initialUsers }: { initialUsers: UserRow
               {createError && (
                 <p className="mb-3 text-sm text-red-600 bg-red-50 rounded px-3 py-2">{createError}</p>
               )}
-              <div className="space-y-3">
+              <div className="space-y-3 py-2">
                 <div>
                   <Label htmlFor="cu-name">Full Name</Label>
                   <Input id="cu-name" name="name" required className="mt-1" />
@@ -239,9 +264,7 @@ export default function UserManagement({ initialUsers }: { initialUsers: UserRow
                   <div>
                     <Label htmlFor="cu-role">Role</Label>
                     <select
-                      id="cu-role"
-                      name="role"
-                      required
+                      id="cu-role" name="role" required
                       className="mt-1 flex h-10 w-full rounded-md border border-[var(--color-border)] bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
                     >
                       <option value="BOOKER">Booker</option>
@@ -260,12 +283,8 @@ export default function UserManagement({ initialUsers }: { initialUsers: UserRow
                 </label>
               </div>
               <DialogFooter>
-                <Button variant="outline" type="button" onClick={() => setCreateOpen(false)}>
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={isPending}>
-                  {isPending ? "Creating…" : "Create User"}
-                </Button>
+                <Button variant="outline" type="button" onClick={() => setCreateOpen(false)}>Cancel</Button>
+                <Button type="submit" disabled={isPending}>{isPending ? "Creating…" : "Create User"}</Button>
               </DialogFooter>
             </form>
           )}
@@ -279,12 +298,12 @@ export default function UserManagement({ initialUsers }: { initialUsers: UserRow
             <form action={handleUpdate}>
               <input type="hidden" name="userId" value={editUser.id} />
               <DialogHeader>
-                <DialogTitle>Edit User</DialogTitle>
+                <DialogTitle>Edit User — {editUser.name}</DialogTitle>
               </DialogHeader>
               {editError && (
                 <p className="mb-3 text-sm text-red-600 bg-red-50 rounded px-3 py-2">{editError}</p>
               )}
-              <div className="space-y-3">
+              <div className="space-y-3 py-2">
                 <div>
                   <Label>Full Name</Label>
                   <Input name="name" required defaultValue={editUser.name} className="mt-1" />
@@ -299,33 +318,63 @@ export default function UserManagement({ initialUsers }: { initialUsers: UserRow
                     <Input name="phone" type="tel" defaultValue={editUser.phone ?? ""} className="mt-1" />
                   </div>
                 </div>
-                <div className="flex gap-6">
+                <div>
+                  <Label>Role</Label>
+                  <select
+                    name="role"
+                    defaultValue={editUser.role}
+                    className="mt-1 flex h-10 w-full rounded-md border border-[var(--color-border)] bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+                  >
+                    <option value="BOOKER">Booker</option>
+                    <option value="INSTALLER">Installer</option>
+                    <option value="ADMIN">Admin</option>
+                  </select>
+                </div>
+                <div className="flex gap-6 pt-1">
                   <label className="flex items-center gap-2 text-sm cursor-pointer">
-                    <input
-                      type="checkbox" name="isActive" value="true"
-                      defaultChecked={editUser.isActive}
-                    />
+                    <input type="checkbox" name="isActive" value="true" defaultChecked={editUser.isActive} />
                     Active
                   </label>
                   <label className="flex items-center gap-2 text-sm cursor-pointer">
-                    <input
-                      type="checkbox" name="twoFactorRequired" value="true"
-                      defaultChecked={editUser.twoFactorRequired}
-                    />
+                    <input type="checkbox" name="twoFactorRequired" value="true" defaultChecked={editUser.twoFactorRequired} />
                     Require 2FA
                   </label>
                 </div>
               </div>
               <DialogFooter>
-                <Button variant="outline" type="button" onClick={() => setEditUser(null)}>
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={isPending}>
-                  {isPending ? "Saving…" : "Save Changes"}
-                </Button>
+                <Button variant="outline" type="button" onClick={() => setEditUser(null)}>Cancel</Button>
+                <Button type="submit" disabled={isPending}>{isPending ? "Saving…" : "Save Changes"}</Button>
               </DialogFooter>
             </form>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Delete Confirmation Dialog ── */}
+      <Dialog open={!!deleteUser} onOpenChange={(o) => !o && setDeleteUser(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete User</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-[var(--color-text-muted)] py-2">
+            Are you sure you want to permanently delete{" "}
+            <strong className="text-[var(--color-text)]">{deleteUser?.name}</strong>{" "}
+            (<span className="font-mono text-xs">{deleteUser?.username}</span>)?
+            This action cannot be undone.
+          </p>
+          {deleteError && (
+            <p className="text-sm text-red-600 bg-red-50 rounded px-3 py-2">{deleteError}</p>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteUser(null)}>Cancel</Button>
+            <Button
+              onClick={handleDelete}
+              disabled={isPending}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              {isPending ? "Deleting…" : "Delete User"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

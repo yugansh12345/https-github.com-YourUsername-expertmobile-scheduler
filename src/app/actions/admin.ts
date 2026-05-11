@@ -103,6 +103,8 @@ export async function updateUserAction(formData: FormData): Promise<UpdateUserRe
   const phone = (formData.get("phone") as string) || null;
   const isActive = formData.get("isActive") === "true";
   const twoFactorRequired = formData.get("twoFactorRequired") === "true";
+  const roleRaw = formData.get("role") as string | null;
+  const role = (["ADMIN", "BOOKER", "INSTALLER"].includes(roleRaw ?? "") ? roleRaw : null) as Role | null;
 
   if (!userId || !name || !email) return { success: false, error: "Missing required fields" };
 
@@ -112,16 +114,20 @@ export async function updateUserAction(formData: FormData): Promise<UpdateUserRe
   });
   if (conflict) return { success: false, error: "Email already in use by another account" };
 
+  const current = await prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
+  const roleChanged = role && current?.role !== role;
+
   await prisma.user.update({
     where: { id: userId },
-    data: { name, email, phone, isActive, twoFactorRequired },
+    data: { name, email, phone, isActive, twoFactorRequired, ...(role ? { role } : {}) },
   });
 
   await writeAuditLog({
     userId: session.userId,
-    action: "USER_UPDATED",
+    action: roleChanged ? "USER_ROLE_CHANGED" : "USER_UPDATED",
     entityType: "User",
     entityId: userId,
+    metadata: roleChanged ? { from: current?.role, to: role } : undefined,
   });
 
   revalidatePath("/admin/users");
@@ -226,6 +232,76 @@ export async function toggleServiceActiveAction(
 
   await prisma.service.update({ where: { id: serviceId }, data: { isActive } });
   revalidatePath("/admin/services");
+  return { success: true };
+}
+
+export async function deleteServiceAction(serviceId: string): Promise<ServiceResult> {
+  const session = await getSession();
+  if (!session?.userId || session.role !== "ADMIN") return { success: false, error: "Unauthorized" };
+
+  const inUse = await prisma.bookingService.count({ where: { serviceId } });
+  if (inUse > 0) {
+    return {
+      success: false,
+      error: `This service is used in ${inUse} booking(s) and cannot be deleted. Deactivate it instead.`,
+    };
+  }
+
+  await prisma.service.delete({ where: { id: serviceId } });
+
+  await writeAuditLog({
+    userId: session.userId,
+    action: "SERVICE_DELETED",
+    entityType: "Service",
+    entityId: serviceId,
+  });
+
+  revalidatePath("/admin/services");
+  return { success: true };
+}
+
+// ─── Delete User ──────────────────────────────────────────────────────────────
+
+export type DeleteUserResult = { success: true } | { success: false; error: string };
+
+export async function deleteUserAction(userId: string): Promise<DeleteUserResult> {
+  const session = await getSession();
+  if (!session?.userId || session.role !== "ADMIN") return { success: false, error: "Unauthorized" };
+
+  if (userId === session.userId) {
+    return { success: false, error: "You cannot delete your own account." };
+  }
+
+  const activeBookings = await prisma.booking.count({
+    where: {
+      OR: [{ installerId: userId }, { bookerId: userId }],
+      status: { notIn: ["cancelled", "completed"] },
+    },
+  });
+
+  if (activeBookings > 0) {
+    return {
+      success: false,
+      error: `This user has ${activeBookings} active booking(s). Deactivate them instead of deleting.`,
+    };
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { name: true, username: true, role: true },
+  });
+
+  await prisma.user.delete({ where: { id: userId } });
+
+  await writeAuditLog({
+    userId: session.userId,
+    action: "USER_DELETED",
+    entityType: "User",
+    entityId: userId,
+    metadata: { name: user?.name, username: user?.username, role: user?.role },
+  });
+
+  revalidatePath("/admin/users");
   return { success: true };
 }
 
