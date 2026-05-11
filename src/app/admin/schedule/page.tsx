@@ -1,117 +1,98 @@
 import { prisma } from "@/lib/prisma";
-import { formatTime } from "@/lib/utils";
-import { Badge } from "@/components/ui/badge";
-import Link from "next/link";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import ScheduleCalendar, { type CalendarView } from "@/components/ScheduleCalendar";
 
 export const metadata = { title: "Schedule — Admin" };
 
-const STATUS_BADGE: Record<string, "default" | "success" | "warning" | "danger" | "muted" | "purple"> = {
-  pending:     "muted",
-  confirmed:   "default",
-  on_the_way:  "purple",
-  in_progress: "warning",
-  completed:   "success",
-  cancelled:   "danger",
-  no_show:     "muted",
-};
-
 interface Props {
-  searchParams: Promise<{ date?: string }>;
+  searchParams: Promise<{ view?: string; date?: string }>;
+}
+
+function getDateRange(view: CalendarView, anchor: Date): { start: Date; end: Date } {
+  const start = new Date(anchor);
+  start.setHours(0, 0, 0, 0);
+
+  if (view === "day") {
+    const end = new Date(start);
+    end.setDate(start.getDate() + 1);
+    return { start, end };
+  }
+
+  if (view === "week") {
+    const day = start.getDay();
+    const diff = day === 0 ? -6 : 1 - day;
+    const weekStart = new Date(start);
+    weekStart.setDate(start.getDate() + diff);
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekStart.getDate() + 7);
+    return { start: weekStart, end: weekEnd };
+  }
+
+  // month — fetch full 6-week grid (42 days from Monday before month start)
+  const monthStart = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
+  const dayOfWeek = monthStart.getDay();
+  const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+  const gridStart = new Date(monthStart);
+  gridStart.setDate(monthStart.getDate() + diff);
+  const gridEnd = new Date(gridStart);
+  gridEnd.setDate(gridStart.getDate() + 42);
+  return { start: gridStart, end: gridEnd };
 }
 
 export default async function AdminSchedulePage({ searchParams }: Props) {
-  const { date: dateParam } = await searchParams;
+  const { view: viewParam, date: dateParam } = await searchParams;
+  const view: CalendarView = (["day", "week", "month"].includes(viewParam ?? "") ? viewParam : "week") as CalendarView;
 
-  const targetDate = dateParam ? new Date(dateParam + "T00:00:00") : new Date();
-  targetDate.setHours(0, 0, 0, 0);
-  const nextDate = new Date(targetDate);
-  nextDate.setDate(targetDate.getDate() + 1);
+  const anchorDate = dateParam ? new Date(dateParam + "T00:00:00") : new Date();
+  anchorDate.setHours(0, 0, 0, 0);
 
-  const prevDay = new Date(targetDate);
-  prevDay.setDate(targetDate.getDate() - 1);
+  // For week view default to Monday of current week
+  const anchor = dateParam ?? (() => {
+    if (view === "week") {
+      const day = anchorDate.getDay();
+      const diff = day === 0 ? -6 : 1 - day;
+      const d = new Date(anchorDate);
+      d.setDate(anchorDate.getDate() + diff);
+      return d.toISOString().split("T")[0];
+    }
+    if (view === "month") {
+      const d = new Date(anchorDate.getFullYear(), anchorDate.getMonth(), 1);
+      return d.toISOString().split("T")[0];
+    }
+    return anchorDate.toISOString().split("T")[0];
+  })();
+
+  const { start, end } = getDateRange(view, new Date(anchor + "T00:00:00"));
 
   const bookings = await prisma.booking.findMany({
-    where: { scheduledStart: { gte: targetDate, lt: nextDate } },
+    where: {
+      scheduledStart: { gte: start, lt: end },
+      status: { notIn: ["cancelled"] as never[] },
+    },
     orderBy: { scheduledStart: "asc" },
     include: {
       customer: { select: { name: true } },
       installer: { select: { name: true } },
-      booker: { select: { name: true } },
     },
   });
 
-  const fmt = (d: Date) => d.toISOString().split("T")[0];
-  const displayDate = targetDate.toLocaleDateString("en-CA", {
-    weekday: "long", month: "long", day: "numeric", year: "numeric",
-  });
-
   return (
-    <div className="max-w-5xl mx-auto space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-[var(--color-primary)]">Schedule</h1>
-          <p className="text-sm text-[var(--color-text-muted)]">{displayDate}</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Link
-            href={`/admin/schedule?date=${fmt(prevDay)}`}
-            className="p-2 rounded-md border border-[var(--color-border)] hover:bg-[var(--color-surface-light)] transition-colors"
-          >
-            <ChevronLeft size={16} />
-          </Link>
-          <Link
-            href={`/admin/schedule?date=${fmt(new Date())}`}
-            className="px-3 py-1.5 text-sm rounded-md border border-[var(--color-border)] hover:bg-[var(--color-surface-light)] transition-colors"
-          >
-            Today
-          </Link>
-          <Link
-            href={`/admin/schedule?date=${fmt(nextDate)}`}
-            className="p-2 rounded-md border border-[var(--color-border)] hover:bg-[var(--color-surface-light)] transition-colors"
-          >
-            <ChevronRight size={16} />
-          </Link>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-xl border border-[var(--color-border)] overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="border-b border-[var(--color-border)]">
-            <tr>
-              {["Time", "Customer", "Installer", "Booked By", "Status"].map((h) => (
-                <th key={h} className="py-3 px-4 text-left text-xs font-semibold text-[var(--color-text-muted)] uppercase tracking-wide">
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-[var(--color-border)]">
-            {bookings.map((b) => (
-              <tr key={b.id} className="hover:bg-[var(--color-surface-light)] transition-colors">
-                <td className="py-3 px-4 whitespace-nowrap font-medium">
-                  {formatTime(b.scheduledStart, b.timezone)} – {formatTime(b.scheduledEnd, b.timezone)}
-                </td>
-                <td className="py-3 px-4">{b.customer.name}</td>
-                <td className="py-3 px-4">{b.installer.name}</td>
-                <td className="py-3 px-4 text-[var(--color-text-muted)]">{b.booker.name}</td>
-                <td className="py-3 px-4">
-                  <Badge variant={STATUS_BADGE[b.status] ?? "muted"}>
-                    {b.status.replace(/_/g, " ")}
-                  </Badge>
-                </td>
-              </tr>
-            ))}
-            {bookings.length === 0 && (
-              <tr>
-                <td colSpan={5} className="py-12 text-center text-[var(--color-text-muted)]">
-                  No bookings scheduled for this day.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+    <div className="max-w-7xl mx-auto">
+      <ScheduleCalendar
+        bookings={bookings.map((b) => ({
+          id: b.id,
+          scheduledStart: b.scheduledStart.toISOString(),
+          scheduledEnd: b.scheduledEnd.toISOString(),
+          timezone: b.timezone,
+          status: b.status,
+          customerName: b.customer.name,
+          installerName: b.installer.name,
+          address: b.address,
+        }))}
+        view={view}
+        anchor={anchor}
+        basePath="/admin/schedule"
+        showInstaller
+      />
     </div>
   );
 }
