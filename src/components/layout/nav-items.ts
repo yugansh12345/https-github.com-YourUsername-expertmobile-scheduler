@@ -9,6 +9,7 @@ export const adminNavItems: NavItem[] = [
   { label: "Users",         href: "/admin/users",        icon: "Users" },
   { label: "Services",      href: "/admin/services",     icon: "Wrench" },
   { label: "Schedule",      href: "/admin/schedule",     icon: "CalendarDays" },
+  { label: "Time Off",      href: "/admin/time-off",     icon: "CalendarOff" },
   { label: "Reports",       href: "/admin/reports",      icon: "BarChart3" },
   { label: "Announcements", href: "/admin/announcements",icon: "Megaphone" },
   { label: "Audit Log",     href: "/admin/audit",        icon: "ScrollText" },

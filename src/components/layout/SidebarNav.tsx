@@ -5,12 +5,13 @@ import { usePathname } from "next/navigation";
 import type { NavItem } from "./nav-items";
 import {
   LayoutDashboard, Users, Wrench, CalendarDays, BarChart3,
-  Megaphone, ScrollText, PlusCircle, ClipboardList, LucideIcon,
+  Megaphone, ScrollText, PlusCircle, ClipboardList, CalendarOff,
+  UserCircle, LucideIcon,
 } from "lucide-react";
 
 const ICONS: Record<string, LucideIcon> = {
   LayoutDashboard, Users, Wrench, CalendarDays, BarChart3,
-  Megaphone, ScrollText, PlusCircle, ClipboardList,
+  Megaphone, ScrollText, PlusCircle, ClipboardList, CalendarOff, UserCircle,
 };
 
 interface Props {

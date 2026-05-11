@@ -15,7 +15,7 @@ export default async function InstallerProfilePage() {
       name: true,
       phone: true,
       installer: {
-        select: { bio: true, timezone: true, skills: true },
+        select: { bio: true, timezone: true, skills: true, defaultWorkingHours: true },
       },
     },
   });
@@ -51,6 +51,11 @@ export default async function InstallerProfilePage() {
           ...r,
           status: r.status as string,
         }))}
+        workingHours={
+          user.installer?.defaultWorkingHours
+            ? (user.installer.defaultWorkingHours as { workStart: string; workEnd: string; lunchStart: string; lunchEnd: string })
+            : null
+        }
       />
     </div>
   );

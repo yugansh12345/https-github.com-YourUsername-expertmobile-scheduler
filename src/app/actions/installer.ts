@@ -191,7 +191,8 @@ export async function requestTimeOffAction(
 export async function updateInstallerProfileAction(
   bio: string,
   phone: string,
-  timezone: string
+  timezone: string,
+  workingHours: { workStart: string; workEnd: string; lunchStart: string; lunchEnd: string } | null
 ): Promise<{ ok: boolean; error?: string }> {
   const session = await getSession();
   if (!session?.userId) return { ok: false, error: "Not authenticated" };
@@ -203,8 +204,17 @@ export async function updateInstallerProfileAction(
     }),
     prisma.installer.upsert({
       where: { userId: session.userId },
-      create: { userId: session.userId, bio: bio.trim() || null, timezone },
-      update: { bio: bio.trim() || null, timezone },
+      create: {
+        userId: session.userId,
+        bio: bio.trim() || null,
+        timezone,
+        defaultWorkingHours: workingHours ?? undefined,
+      },
+      update: {
+        bio: bio.trim() || null,
+        timezone,
+        defaultWorkingHours: workingHours ?? undefined,
+      },
     }),
   ]);
 

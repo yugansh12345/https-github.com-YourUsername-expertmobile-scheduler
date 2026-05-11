@@ -275,3 +275,96 @@ export async function deleteAnnouncementAction(id: string): Promise<Announcement
   revalidatePath("/admin/announcements");
   return { success: true };
 }
+
+// ─── Time Off Management ──────────────────────────────────────────────────────
+
+export type TimeOffResult = { success: true } | { success: false; error: string };
+
+export async function approveTimeOffAction(id: string): Promise<TimeOffResult> {
+  const session = await getSession();
+  if (!session?.userId || session.role !== "ADMIN") return { success: false, error: "Unauthorized" };
+
+  const record = await prisma.timeOff.findUnique({ where: { id }, select: { installerId: true } });
+  if (!record) return { success: false, error: "Record not found" };
+
+  await prisma.timeOff.update({
+    where: { id },
+    data: { status: "approved", reviewedById: session.userId },
+  });
+
+  await writeAuditLog({
+    userId: session.userId,
+    action: "TIME_OFF_APPROVED",
+    entityType: "TimeOff",
+    entityId: id,
+  });
+
+  revalidatePath("/admin/time-off");
+  revalidatePath("/installer/schedule");
+  return { success: true };
+}
+
+export async function rejectTimeOffAction(id: string): Promise<TimeOffResult> {
+  const session = await getSession();
+  if (!session?.userId || session.role !== "ADMIN") return { success: false, error: "Unauthorized" };
+
+  const record = await prisma.timeOff.findUnique({ where: { id }, select: { installerId: true } });
+  if (!record) return { success: false, error: "Record not found" };
+
+  await prisma.timeOff.update({
+    where: { id },
+    data: { status: "rejected", reviewedById: session.userId },
+  });
+
+  await writeAuditLog({
+    userId: session.userId,
+    action: "TIME_OFF_REJECTED",
+    entityType: "TimeOff",
+    entityId: id,
+  });
+
+  revalidatePath("/admin/time-off");
+  return { success: true };
+}
+
+export async function adminCreateTimeOffAction(
+  installerId: string,
+  startDate: string,
+  endDate: string,
+  reason: string
+): Promise<TimeOffResult> {
+  const session = await getSession();
+  if (!session?.userId || session.role !== "ADMIN") return { success: false, error: "Unauthorized" };
+
+  if (!installerId || !startDate || !endDate) return { success: false, error: "Missing required fields" };
+  if (endDate < startDate) return { success: false, error: "End date must be on or after start date" };
+
+  const installer = await prisma.user.findFirst({
+    where: { id: installerId, role: "INSTALLER" },
+    select: { id: true },
+  });
+  if (!installer) return { success: false, error: "Installer not found" };
+
+  const record = await prisma.timeOff.create({
+    data: {
+      installerId,
+      startDate: new Date(startDate + "T00:00:00"),
+      endDate: new Date(endDate + "T23:59:59"),
+      reason: reason.trim() || null,
+      status: "approved",
+      reviewedById: session.userId,
+    },
+  });
+
+  await writeAuditLog({
+    userId: session.userId,
+    action: "TIME_OFF_REQUESTED",
+    entityType: "TimeOff",
+    entityId: record.id,
+    metadata: { installerId, startDate, endDate, createdBy: "admin", autoApproved: true },
+  });
+
+  revalidatePath("/admin/time-off");
+  revalidatePath("/installer/schedule");
+  return { success: true };
+}

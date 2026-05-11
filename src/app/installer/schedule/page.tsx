@@ -30,6 +30,23 @@ function getDateRange(view: CalendarView, anchor: Date): { start: Date; end: Dat
   return { start: gs, end: ge };
 }
 
+function expandTimeOffToDays(
+  records: { startDate: Date; endDate: Date }[],
+  rangeStart: Date,
+  rangeEnd: Date,
+): string[] {
+  const days: string[] = [];
+  for (const r of records) {
+    const curr = new Date(Math.max(r.startDate.getTime(), rangeStart.getTime()));
+    const stop = new Date(Math.min(r.endDate.getTime(), rangeEnd.getTime()));
+    while (curr <= stop) {
+      days.push(curr.toISOString().split("T")[0]);
+      curr.setDate(curr.getDate() + 1);
+    }
+  }
+  return days;
+}
+
 export default async function InstallerSchedulePage({ searchParams }: Props) {
   const session = await getSession();
   if (!session?.userId) redirect("/login");
@@ -56,18 +73,41 @@ export default async function InstallerSchedulePage({ searchParams }: Props) {
 
   const { start, end } = getDateRange(view, new Date(anchor + "T00:00:00"));
 
-  const bookings = await prisma.booking.findMany({
-    where: {
-      installerId: session.userId,
-      scheduledStart: { gte: start, lt: end },
-      status: { notIn: ["cancelled"] as never[] },
-    },
-    orderBy: { scheduledStart: "asc" },
-    include: {
-      customer: { select: { name: true } },
-      installer: { select: { name: true } },
-    },
-  });
+  const [bookings, installerRecord, approvedTimeOff] = await Promise.all([
+    prisma.booking.findMany({
+      where: {
+        installerId: session.userId,
+        scheduledStart: { gte: start, lt: end },
+        status: { notIn: ["cancelled"] as never[] },
+      },
+      orderBy: { scheduledStart: "asc" },
+      include: {
+        customer: { select: { name: true } },
+        installer: { select: { name: true } },
+      },
+    }),
+    prisma.installer.findUnique({
+      where: { userId: session.userId },
+      select: { defaultWorkingHours: true },
+    }),
+    prisma.timeOff.findMany({
+      where: {
+        installerId: session.userId,
+        status: "approved",
+        startDate: { lte: end },
+        endDate: { gte: start },
+      },
+      select: { startDate: true, endDate: true },
+    }),
+  ]);
+
+  const timeOffDays = expandTimeOffToDays(approvedTimeOff, start, end);
+
+  const wh = installerRecord?.defaultWorkingHours as Record<string, string> | null ?? null;
+  const lunchBlock =
+    wh?.lunchStart && wh?.lunchEnd
+      ? { start: wh.lunchStart, end: wh.lunchEnd }
+      : null;
 
   return (
     <div className="max-w-7xl mx-auto">
@@ -86,6 +126,8 @@ export default async function InstallerSchedulePage({ searchParams }: Props) {
         anchor={anchor}
         basePath="/installer/schedule"
         showInstaller={false}
+        timeOffDays={timeOffDays}
+        lunchBlock={lunchBlock}
       />
     </div>
   );
